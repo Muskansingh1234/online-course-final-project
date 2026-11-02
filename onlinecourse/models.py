@@ -1,17 +1,49 @@
+
 from django.conf import settings
 from django.db import models
+
+
+class Instructor(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    full_name = models.CharField(max_length=100)
+    bio = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.full_name
+
+
+class Learner(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    full_name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True)
+
+    def __str__(self):
+        return self.full_name
 
 
 class Course(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    instructors = models.ManyToManyField(Instructor, blank=True)
 
     def __str__(self):
         return self.name
 
 
 class Lesson(models.Model):
-    course = models.ForeignKey(Course, related_name="lessons", on_delete=models.CASCADE)
+    course = models.ForeignKey(
+        Course, related_name="lessons", on_delete=models.CASCADE
+    )
     title = models.CharField(max_length=200)
     content = models.TextField(blank=True)
     order = models.PositiveIntegerField(default=1)
@@ -23,20 +55,42 @@ class Lesson(models.Model):
         return f"{self.course.name}: {self.title}"
 
 
-class Question(models.Model):
-    lesson = models.ForeignKey(Lesson, related_name="questions", on_delete=models.CASCADE)
-    question_text = models.TextField()
-    order = models.PositiveIntegerField(default=1)
-
-    class Meta:
-        ordering = ["order", "id"]
+class Enrollment(models.Model):
+    learner = models.ForeignKey(
+        Learner, on_delete=models.CASCADE, related_name="enrollments"
+    )
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name="enrollments"
+    )
+    date_enrolled = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return self.question_text[:80]
+        return f"{self.learner} - {self.course}"
+
+
+class Question(models.Model):
+    course = models.ForeignKey(
+        Course, related_name="questions", on_delete=models.CASCADE
+    )
+    content = models.TextField()
+    grade = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return self.content[:80]
+
+    def is_get_score(self, selected_ids):
+        correct_ids = set(
+            self.choices.filter(is_correct=True).values_list("id", flat=True)
+        )
+        selected_ids = {int(choice_id) for choice_id in selected_ids}
+        return bool(correct_ids) and correct_ids == selected_ids
 
 
 class Choice(models.Model):
-    question = models.ForeignKey(Question, related_name="choices", on_delete=models.CASCADE)
+    question = models.ForeignKey(
+        Question, related_name="choices", on_delete=models.CASCADE
+    )
     choice_text = models.CharField(max_length=300)
     is_correct = models.BooleanField(default=False)
 
@@ -45,18 +99,14 @@ class Choice(models.Model):
 
 
 class Submission(models.Model):
-    student = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name="exam_submissions",
-        on_delete=models.CASCADE
+    enrollment = models.ForeignKey(
+        Enrollment, related_name="submissions", on_delete=models.CASCADE
     )
-    course = models.ForeignKey(Course, related_name="submissions", on_delete=models.CASCADE)
-    score = models.PositiveIntegerField(default=0, help_text="Score as a percentage (0–100).")
-    total_questions = models.PositiveIntegerField(default=0)
-    correct_answers = models.PositiveIntegerField(default=0)
+    choices = models.ManyToManyField(Choice, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-submitted_at"]
 
     def __str__(self):
-        return f"{self.student} – {self.course} ({self.score}%)"
+        return f"Submission {self.id} - {self.enrollment}"
